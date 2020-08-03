@@ -1,221 +1,169 @@
 import React = require("react");
 
-interface IState {
-	messages: any[],
-	first: number,
-	last: number,
-	avgHeight: number
+interface AppState {
+	items: any[];
+	first: number;
+	last: number;
 }
 
-export class VirtualScrolling extends React.Component<{ items: any[]}, IState> {
-	public state: IState;
-	public observer: ResizeObserver;
+class VirtualScrolling extends React.Component<{ items: any[] }, AppState> {
+
 	public element: React.RefObject<HTMLDivElement>;
+	public observer: ResizeObserver;
 	public totalHeight: number;
-	public prevScroll: number;
-	public onScroll: any;
-	public filling: boolean;
+	public state: AppState;
 
 	constructor(props: { items: any[] }) {
 		super(props);
 
-		this.element = React.createRef();
-		this.observer = {} as ResizeObserver;
-		this.totalHeight = 0;
-		this.prevScroll = 0;
-		this.onScroll = this.scrollEvent.bind(this);
-		this.filling = false;
+        this.element = React.createRef();
+        this.observer = {} as ResizeObserver;
+        this.totalHeight = 0;
 
-		this.state = {
-			messages: this.props.items,
-			first: 0,
-			last: 0,
-			avgHeight: 0
-		};
-
-		setInterval(() => {
-			if (this.element.current) this.scroller(this.element.current.scrollTop);
-		}, 250);
+        this.state = {
+			items: this.props.items,
+            first: 0,
+            last: 0
+		}
+		
+		this.scroller = this.scroller.bind(this);
 	}
-
+	
 	push() {
-		const state = this.state;
-		const element = this.element.current;
-
-		if (element && state.last < state.messages.length) {
-
-			state.last++;
-
-			this.setState(state, () => {
-				const childHeight = (element.children[element.children.length - 2] || {}).clientHeight || 0;
-				this.totalHeight += childHeight;
-			});
-		}
-	}
-
-	pop() {
-		const state = this.state;
-		const element = this.element.current;
-
-		if (element && state.last > 0) {
-			const childHeight = (element.children[element.children.length - 2] || {}).clientHeight || 0;
-
-			state.last--;
-
-			this.totalHeight -= childHeight;
-
-			this.setState(state);
-		}
-	}
-
-	shift() {
-		const state = this.state;
-		const element = this.element.current;
-
-		if (element && state.first < (state.last - 1)) {
-
-			state.first++;
-
-			const childHeight = (element.children[state.first ? 1 : 0] || {}).clientHeight || 0;
-			this.totalHeight -= childHeight;
-
-			this.setState(state);
-        }
-	}
-
-	unshift() {
         const state = this.state;
-        const element = this.element.current;
 
-        if (element && state.first > 0) {
-			state.first--;
+        if (state.last < state.items.length) {
+            state.last++;
 
             this.setState(state, () => {
-				const childHeight = (element.children[state.first ? 1 : 0] || {}).clientHeight || 0;
-                this.totalHeight += childHeight;
+                const child = (this.element.current ? this.element.current.lastChild || {} : {}) as HTMLDivElement;
+                if (child) this.totalHeight += child.offsetHeight;
+            });
+        }
+    }
+
+    pop() {
+        const state = this.state;
+
+        if (state.last > 0) {
+            state.last--;
+
+            const child = (this.element.current ? this.element.current.lastChild || {} : {}) as HTMLDivElement;
+            if (child) this.totalHeight -= child.offsetHeight;
+
+            this.setState(state);
+        }
+    }
+
+    shift() {
+        if (this.element.current) {
+            const state = this.state;
+            const scrollTop = this.element.current.scrollTop;
+
+            if (state.first < (state.last - 1)) {
+                state.first++;
+
+                const child = (this.element.current ? this.element.current.firstChild || {} : {}) as HTMLDivElement;
+                if (child) this.totalHeight -= child.offsetHeight;
+
+                this.setState(state, () => {
+                    // Cheat for async shift/push at the same time
+                    // Re-check push
+                    if (this.element.current && (scrollTop + this.element.current.offsetHeight) >= this.totalHeight) {
+                        this.push();
+                    }
+                });
+            }
+        }
+    }
+
+    unshift() {
+        const state = this.state;
+
+        if (state.first > 0) {
+            state.first--;
+
+            this.setState(state, () => {
+                const child = (this.element.current ? this.element.current.firstChild || {} : {}) as HTMLDivElement;
+                if (child && this.element.current) {
+                    this.totalHeight += child.offsetHeight;
+                    this.element.current.scrollTop = child.offsetHeight;
+                }
             });
         }
 	}
 
-	fill() {
-		const state = this.state;
-		const element = this.element.current;
+    fill() {
+        if (this.element.current && this.element.current.offsetHeight > this.totalHeight && this.state.last < (this.state.items.length)) {
+            this.push();
 
-		if (element) {
-			if (element.offsetHeight > this.totalHeight && state.last < state.messages.length) {
-				this.filling = true;
+            this.fill();
+        }
+    }
+    
+    scroller(target: React.UIEvent<HTMLDivElement>) {
+		const scrollTop = target.currentTarget.scrollTop;
 
-				state.last++;
+        if (this.element.current) {
+            const firstChild = (this.element.current.firstChild || {}) as HTMLDivElement;
+            const lastChild = (this.element.current.lastChild || {}) as HTMLDivElement;
 
-				this.setState(state, () => {
-					const childHeight = (element.children[element.children.length - 2] || {}).clientHeight || 0;
-					this.totalHeight += childHeight;
+            if ((scrollTop + this.element.current.offsetHeight) >= this.totalHeight) {
+                this.push();
+            }
+            else if (lastChild && (scrollTop + this.element.current.offsetHeight) < (this.totalHeight - lastChild.offsetHeight)) {
+                this.pop();
+            }
 
-					this.fill();
-				});
-			}
-			else {
-				state.avgHeight = Math.round(this.totalHeight / (Math.abs(state.last - state.first) || 1));
-				
-				this.setState(state, () => {
-					const firstChild = (element.children[state.first ? 1 : 0] || {}) as HTMLDivElement;
-
-					element.scrollTop = Math.abs((firstChild.offsetTop || 0) - element.offsetTop);
-
-					this.filling = false;
-				});
-			}
-		}
+            if (firstChild && scrollTop > firstChild.offsetHeight) {
+                this.shift();
+            }
+            else if (scrollTop === 0 && this.state.first) {
+                this.unshift();
+            }
+        }
 	}
 
     componentDidMount() {
         this.observer = new ResizeObserver((entries) => {
             entries.forEach((entry) => {
-				this.fill();
+                const state = this.state;
+
+                state.first = 0;
+                state.last = 0;
+
+                this.setState(state);
+        
+                this.totalHeight = 0;
+
+                this.fill();
             });
         });
 
         if (this.element.current) this.observer.observe(this.element.current);
-	}
+    }
 
     componentWillUnmount() {
         if (this.element.current) this.observer.unobserve(this.element.current);
-    }
-	
-	scrollEvent(target: React.UIEvent<HTMLDivElement>) {
-		this.scroller(target.currentTarget.scrollTop);
-	}
-
-	scroller(scrollTop: number) {
-		const state = this.state;
-		const element = this.element.current;
-
-		if (element) {
-			const firstChild = (element.children[state.first ? 1 : 0] || {}) as HTMLDivElement;
-			const firstChildTop = (firstChild.offsetTop || 0) - element.offsetTop;
-			const lastChild = (element.children[element.children.length - 2] || {}) as HTMLDivElement;
-			const lastChildTop = (lastChild.offsetTop || 0) - element.offsetTop;
-			const avgHeight = Math.round(this.totalHeight / (Math.abs(state.last - state.first) || 1));
-
-			if (Math.abs(scrollTop - this.prevScroll) > (avgHeight * 5)) {
-				let newPosition = Math.abs(Math.floor(scrollTop / (avgHeight || 1)));
-
-				if (newPosition >= state.messages.length) newPosition = Math.abs(state.messages.length - state.last - state.first - 1);
-
-				state.first = newPosition;
-				state.last = state.first;
-
-				this.totalHeight = 0;
-
-				this.setState(state, () => this.fill());
-			}
-			else if (!this.filling) {
-				if ((lastChildTop + lastChild.offsetHeight) <= (scrollTop + element.offsetHeight)) {
-					this.push();
-
-					if (scrollTop > (firstChildTop + firstChild.offsetHeight + (avgHeight * 3))) {
-						this.shift();
-					}
-				}
-				
-				if ((lastChildTop + lastChild.offsetHeight) > (scrollTop + element.offsetHeight + (avgHeight * 3))) {
-					this.pop();
-					if (scrollTop < (firstChildTop - firstChild.offsetHeight)) {
-						this.unshift();
-					}
-				}
-			}
-
-			if (firstChildTop > scrollTop) {
-				this.unshift();
-			}
-
-			this.prevScroll = scrollTop;
-		}
 	}
 
 	render() {
-		const state = this.state;
+		const { first, last } = this.state;
 
 		return (
 			<div
+				style={{ flex: 1, overflow: "auto" }}
 				ref={ this.element }
-				style={{
-					flex: 1,
-					overflow: "auto"
-				}}
-				onScroll = { this.onScroll }
+				onScroll={ this.scroller }
 			>
-				{ state.first ? <div key={ 'top-1' } className="placeholder-content" style={{ height: (state.avgHeight * state.first) + 'px' }}></div> : '' }
-				
-				{state.messages.slice(state.first, state.last).map((m, index) => (
-					<div key={ 'vsItem-' + index}>
-						{ m }
+				{ this.state.items.slice(first, last).map((item, index) => (
+					<div key={ 'item-' + index }>
+						{ item }
 					</div>
-				))}
-
-				{ <div key={ 'bot-1' } className="placeholder-content" style={{ height: (state.avgHeight * (state.messages.length - state.last)) + 'px' }}></div> }
+				)) }
 			</div>
 		);
 	}
 }
+
+export default VirtualScrolling;
