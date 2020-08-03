@@ -1,5 +1,5 @@
 {
-	"name": "react-virtual-scrolling",
+	"name": "@bkrith/react-virtual-scrolling",
 	"description": "A simple virtual scrolling component for React with dynamic heights",
 	"version": "1.0.0",
 	"author": {
